@@ -48,11 +48,11 @@ class AccessibilityInspector:
     def tree(self) -> AccessibilityNode:
         return self.backend.tree()
 
-    def target_names(self) -> list[str]:
+    def target_names(self, limit: int = 200, max_label_length: int = 120) -> list[str]:
         names: list[str] = []
         for node in self._walk(self.tree()):
-            names.extend(node.labels)
-        return list(dict.fromkeys(name for name in names if name))
+            names.extend(label for label in node.labels if len(label) <= max_label_length)
+        return list(dict.fromkeys(name for name in names if name))[:limit]
 
     def find(self, target: str) -> AccessibilityNode:
         wanted = target.casefold().strip()

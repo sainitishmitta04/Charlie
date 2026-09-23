@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
+from pathlib import Path
 
+from app import config
 from app.actions.accessibility import AccessibilityError, AccessibilityInspector
 from app.actions.executor import ActionExecutor
 from app.actions.macos import NativeMacOSExecutor, installed_applications
 from app.actions.schema import DecisionContext
+from app.audio.microphone import Microphone, MicrophoneError, SoundDeviceMicrophone
+from app.audio.stt import SpeechToText, SpeechToTextError, WhisperSTT
 from app.brain.jev import JevDecisionEngine
 from app.commands.compound import split_compound
 
@@ -15,10 +20,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--text", help="Use text instead of microphone input")
     parser.add_argument("--dry-run", action="store_true", help="Decide but do not control macOS")
     parser.add_argument("--inspect-ui", action="store_true", help="Print the frontmost app's accessibility tree")
+    parser.add_argument("--voice", action="store_true", help="Record one local command and transcribe it with whisper.cpp")
     return parser
 
 
 def run_text(transcript: str, dry_run: bool = False) -> int:
+    if not transcript.strip():
+        print("No speech detected.")
+        return 1
     engine = JevDecisionEngine()
     executor = ActionExecutor(NativeMacOSExecutor())
     steps = split_compound(transcript)
@@ -40,13 +49,43 @@ def run_text(transcript: str, dry_run: bool = False) -> int:
     return 0
 
 
+def run_voice(
+    dry_run: bool = False,
+    microphone: Microphone | None = None,
+    stt: SpeechToText | None = None,
+    run_transcript: Callable[[str, bool], int] | None = None,
+) -> int:
+    """Record one local clip, transcribe it, then use the normal text pipeline."""
+    audio_path: Path | None = None
+    try:
+        microphone = microphone or SoundDeviceMicrophone(config.CHARLIE_RECORD_SECONDS, config.CHARLIE_SAMPLE_RATE)
+        stt = stt or WhisperSTT()
+        print("Listening...")
+        audio_path = microphone.record()
+        transcript = stt.transcribe(audio_path)
+        if not transcript.strip():
+            print("No speech detected.")
+            return 1
+        print(f"Transcript: {transcript}")
+        runner = run_transcript or run_text
+        return runner(transcript, dry_run)
+    except (MicrophoneError, SpeechToTextError) as error:
+        print(str(error))
+        return 1
+    finally:
+        if audio_path is not None:
+            audio_path.unlink(missing_ok=True)
+
+
 def main() -> int:
     args = build_parser().parse_args()
     if args.inspect_ui:
         print(AccessibilityInspector().render())
         return 0
+    if args.voice:
+        return run_voice(dry_run=args.dry_run)
     if not args.text:
-        raise SystemExit("MVP currently requires --text; microphone capture is the next phase")
+        raise SystemExit("Provide --text, --voice, or --inspect-ui")
     return run_text(args.text, args.dry_run)
 
 

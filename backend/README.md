@@ -1,11 +1,13 @@
 # Charlie backend
 
-Phase 4 keeps text input and separates the system into four boundaries:
+Phase 5 keeps text input as the source of truth and adds a local audio boundary:
 
 - `brain/`: decision engines. Jev is active; Laya has a reserved adapter.
 - `actions/schema.py`: validated actions from an untrusted model response.
 - `actions/registry.py` and `actions/macos.py`: the only macOS execution path.
 - `actions/accessibility.py`: native AX-tree inspection and safe element actions.
+- `audio/microphone.py`: one fixed-length local WAV recording.
+- `audio/stt.py`: local whisper.cpp execution and transcript parsing.
 
 Installed applications are discovered from `/Applications`, `/System/Applications`,
 and `~/Applications`. Switching uses the same validated app target as opening an app.
@@ -22,6 +24,7 @@ PYTHONPATH=backend python -m app.main --text "open Chrome and go to YouTube" --d
 PYTHONPATH=backend python -m app.main --text "open Notes and type buy milk" --dry-run
 PYTHONPATH=backend python -m app.main --text "open System Settings" --dry-run
 PYTHONPATH=backend python -m app.main --inspect-ui
+PYTHONPATH=backend python -m app.main --voice --dry-run
 ```
 
 Remove `--dry-run` only when you want Charlie to control macOS. The current commands
@@ -42,6 +45,64 @@ actions include `ACCESSIBILITY_CLICK`, `ACCESSIBILITY_SELECT`, `ACCESSIBILITY_FO
 Grant the terminal or launcher running Charlie macOS Accessibility permission in
 System Settings -> Privacy & Security -> Accessibility. Charlie never uses screenshots,
 coordinates, or model-generated shell commands for these operations.
+
+## Local voice setup
+
+Charlie does not download whisper.cpp or speech models automatically. Install the
+official whisper.cpp project separately:
+
+```bash
+git clone https://github.com/ggml-org/whisper.cpp.git
+cd whisper.cpp
+cmake -B build
+cmake --build build -j --config Release
+./models/download-ggml-model.sh base.en
+```
+
+Add the resulting paths to the repository root `.env`:
+
+```dotenv
+CHARLIE_WHISPER_BIN=/absolute/path/to/whisper.cpp/build/bin/whisper-cli
+CHARLIE_WHISPER_MODEL=/absolute/path/to/whisper.cpp/models/ggml-base.en.bin
+CHARLIE_RECORD_SECONDS=5
+CHARLIE_SAMPLE_RATE=16000
+```
+
+Relative model paths are resolved from the Charlie repository root, so this also
+works when the model is copied to `models/ggml-base.en.bin`:
+
+```dotenv
+CHARLIE_WHISPER_MODEL=models/ggml-base.en.bin
+```
+
+Install the Python recording dependencies in Charlie's environment:
+
+```bash
+source .venv/bin/activate
+uv pip install sounddevice soundfile
+```
+
+Grant Terminal, VS Code, or the launcher running Charlie access under
+`System Settings -> Privacy & Security -> Microphone`.
+
+Run one command and exit:
+
+```bash
+PYTHONPATH=backend python -m app.main --voice
+PYTHONPATH=backend python -m app.main --voice --dry-run
+```
+
+Voice mode records one fixed-length clip, runs whisper.cpp locally, and sends only
+the resulting text transcript to Jev. It does not implement wake words, continuous
+listening, voice activity detection, or cloud speech APIs.
+
+Troubleshooting:
+
+- `Whisper executable not found`: set `CHARLIE_WHISPER_BIN` to the executable path.
+- `Whisper model not found`: set `CHARLIE_WHISPER_MODEL` to `ggml-base.en.bin`.
+- `No default microphone was found`: select an input device in macOS Sound settings.
+- `Microphone permission denied`: grant the launching application Microphone access.
+- `No speech detected`: increase `CHARLIE_RECORD_SECONDS` or speak closer to the microphone.
 
 Run tests and lint:
 
