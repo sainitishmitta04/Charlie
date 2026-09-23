@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run_text(transcript: str, dry_run: bool = False) -> int:
     action = JevDecisionEngine().decide(transcript, DecisionContext(transcript=transcript))
     result = ActionExecutor(NativeMacOSExecutor()).execute(action, dry_run=dry_run)
-    print(f"Transcript:\n{transcript}\n\nDecision:\n{action.action.value}\n\nTarget:\n{action.target or '-'}\n\nExecution:\n{result}")
+    print(f"Transcript:\n{transcript}\n\nAction:\n{action.action.value}\n\nTarget:\n{action.target or '-'}\n\nExecution:\n{result}")
     return 0
 
 

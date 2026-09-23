@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from app.actions.macos import MacOSExecutor
-from app.actions.schema import Action, ActionType
+from app.actions.registry import COMMAND_REGISTRY
+from app.actions.schema import Action
 
 
 class ActionExecutor:
@@ -11,6 +12,7 @@ class ActionExecutor:
     def execute(self, action: Action, dry_run: bool = False) -> str:
         if dry_run:
             return "DRY RUN - nothing executed"
-        if action.action == ActionType.OPEN_APP:
-            return self.macos.execute_open_app(action.target or "")
-        raise ValueError(f"No executor registered for {action.action}")
+        handler = COMMAND_REGISTRY.get(action.action)
+        if handler is None:
+            raise ValueError(f"No executor registered for {action.action}")
+        return handler(self.macos, action)
