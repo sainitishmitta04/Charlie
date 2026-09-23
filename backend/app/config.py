@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+def env(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+TYPESAFE_API_KEY = env("TYPESAFE_API_KEY")
+TYPESAFE_URL = env("TYPESAFE_URL", "https://api.typesafe.ai/v1/systemone")
+JEV_MODEL = env("TYPESAFE_MODEL", "jev-latest")
+WAKE_WORD = env("CHARLIE_WAKE_WORD", "Charlie")
