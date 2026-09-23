@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 import time
+from functools import lru_cache
+from pathlib import Path
 from typing import ClassVar, Protocol
 from urllib.parse import quote_plus
 
@@ -12,6 +14,14 @@ class MacOSExecutor(Protocol):
 
 
 class NativeMacOSExecutor:
+    _SYSTEM_SETTINGS: ClassVar[dict[str, str]] = {
+        "ACCESSIBILITY": "com.apple.preference.universalaccess",
+        "DISPLAY": "com.apple.Displays-Settings.extension",
+        "SOUND": "com.apple.Sound-Settings.extension",
+        "BLUETOOTH": "com.apple.BluetoothSettings",
+        "WI_FI": "com.apple.wifi-settings-extension",
+        "PRIVACY_SECURITY": "com.apple.settings.PrivacySecurity.extension",
+    }
     _KEY_CODES: ClassVar[dict[str, int]] = {
         "ENTER": 36, "ESCAPE": 53, "TAB": 48, "SPACE": 49, "BACKSPACE": 51,
         "DELETE": 117, "UP": 126, "DOWN": 125, "LEFT": 123, "RIGHT": 124,
@@ -37,6 +47,11 @@ class NativeMacOSExecutor:
 
     def _switch_app(self, action: object) -> str:
         return self._open_app(action)
+
+    def _system_settings(self, action: object) -> str:
+        pane = self._SYSTEM_SETTINGS[action.setting]
+        self._run(["open", f"x-apple.systempreferences:{pane}"])
+        return f"Opening {action.setting.replace('_', ' ').title()} settings."
 
     def _open_url(self, action: object) -> str:
         url = action.url if action.url.startswith(("http://", "https://")) else f"https://{action.url}"
@@ -97,3 +112,15 @@ class NativeMacOSExecutor:
     def _wait(self, action: object) -> str:
         time.sleep(action.seconds)
         return "Done waiting."
+
+
+@lru_cache(maxsize=1)
+def installed_applications() -> list[str]:
+    """Return installed .app bundle names from standard macOS application folders."""
+    roots = (Path("/Applications"), Path("/System/Applications"), Path.home() / "Applications")
+    names: set[str] = set()
+    for root in roots:
+        if root.exists():
+            names.update(path.stem for path in root.glob("*.app"))
+    names.update({"Finder", "System Settings"})
+    return sorted(names, key=str.casefold)

@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app import config
+from app.actions.macos import installed_applications
 from app.actions.schema import Action, ActionType, DecisionContext, action_from_dict
 
 
@@ -21,9 +22,9 @@ class JevDecisionEngine:
 
     def decide(self, transcript: str, context: DecisionContext | None = None) -> Action:
         context = context or DecisionContext(transcript=transcript)
-        apps = context.installed_apps or [
-            "Google Chrome", "Safari", "Visual Studio Code", "Notes", "Finder", "System Settings",
-        ]
+        apps = context.installed_apps or installed_applications()
+        if not apps:
+            apps = ["Google Chrome", "Safari", "Visual Studio Code", "Notes", "Finder", "System Settings"]
         candidates = self._candidates(transcript)
         payload = {
             "model": self.model,
@@ -45,6 +46,14 @@ class JevDecisionEngine:
                 "direction": {"type": "choice", "criteria": {direction: direction for direction in ("UP", "DOWN", "TOP", "BOTTOM")}},
                 "amount": {"type": "choice", "criteria": {str(amount): str(amount) for amount in range(1, 21)}},
                 "seconds": {"type": "choice", "criteria": {str(seconds): str(seconds) for seconds in (1, 2, 5, 10)}},
+                "setting": {"type": "choice", "criteria": {
+                    "ACCESSIBILITY": "Accessibility",
+                    "DISPLAY": "Display",
+                    "SOUND": "Sound",
+                    "BLUETOOTH": "Bluetooth",
+                    "WI_FI": "Wi-Fi",
+                    "PRIVACY_SECURITY": "Privacy & Security",
+                }},
             },
         }
         response = self.client.post(config.TYPESAFE_URL, json=payload, headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
@@ -101,4 +110,6 @@ class JevDecisionEngine:
             values["amount"] = int(selected("amount", "5") or 5)
         elif action == ActionType.WAIT.value:
             values["seconds"] = float(selected("seconds", "1") or 1)
+        elif action == ActionType.SYSTEM_SETTINGS.value:
+            values["setting"] = str(selected("setting", "DISPLAY")).upper()
         return action_from_dict(values)

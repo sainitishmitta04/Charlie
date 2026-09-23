@@ -6,6 +6,7 @@ from app.actions.executor import ActionExecutor
 from app.actions.macos import NativeMacOSExecutor
 from app.actions.schema import DecisionContext
 from app.brain.jev import JevDecisionEngine
+from app.commands.compound import split_compound
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,9 +17,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_text(transcript: str, dry_run: bool = False) -> int:
-    action = JevDecisionEngine().decide(transcript, DecisionContext(transcript=transcript))
-    result = ActionExecutor(NativeMacOSExecutor()).execute(action, dry_run=dry_run)
-    print(f"Transcript:\n{transcript}\n\nAction:\n{action.action.value}\n\nTarget:\n{action.target or '-'}\n\nExecution:\n{result}")
+    engine = JevDecisionEngine()
+    executor = ActionExecutor(NativeMacOSExecutor())
+    steps = split_compound(transcript)
+    for index, step in enumerate(steps, start=1):
+        action = engine.decide(step, DecisionContext(transcript=step))
+        result = executor.execute(action, dry_run=dry_run)
+        prefix = f"Step {index}:\n" if len(steps) > 1 else ""
+        print(f"{prefix}Transcript:\n{step}\n\nAction:\n{action.action.value}\n\nTarget:\n{action.target or '-'}\n\nExecution:\n{result}")
     return 0
 
 

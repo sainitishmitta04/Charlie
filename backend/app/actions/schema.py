@@ -20,6 +20,7 @@ class ActionType(StrEnum):
     LOCK_SCREEN = "LOCK_SCREEN"
     DARK_MODE_ON = "DARK_MODE_ON"
     DARK_MODE_OFF = "DARK_MODE_OFF"
+    SYSTEM_SETTINGS = "SYSTEM_SETTINGS"
     SWITCH_APP = "SWITCH_APP"
     WAIT = "WAIT"
 
@@ -36,6 +37,7 @@ class Action(BaseModel):
     direction: str | None = None
     amount: int | None = Field(default=None, ge=1, le=20)
     engine: str | None = None
+    setting: str | None = None
     seconds: float | None = Field(default=None, ge=0, le=60)
 
     @model_validator(mode="after")
@@ -48,6 +50,7 @@ class Action(BaseModel):
             ActionType.PRESS_KEY: ("key",),
             ActionType.SCROLL: ("direction",),
             ActionType.SWITCH_APP: ("target",),
+            ActionType.SYSTEM_SETTINGS: ("setting",),
             ActionType.WAIT: ("seconds",),
         }
         missing = [name for name in required.get(self.action, ()) if getattr(self, name) is None]
@@ -57,6 +60,10 @@ class Action(BaseModel):
             raise ValueError("SCROLL direction must be UP, DOWN, TOP, or BOTTOM")
         if self.action == ActionType.OPEN_URL and not self.url.startswith(("http://", "https://")):
             raise ValueError("OPEN_URL url must start with http:// or https://")
+        if self.action == ActionType.SYSTEM_SETTINGS and self.setting not in {
+            "ACCESSIBILITY", "DISPLAY", "SOUND", "BLUETOOTH", "WI_FI", "PRIVACY_SECURITY",
+        }:
+            raise ValueError("SYSTEM_SETTINGS setting is not supported")
         if self.action == ActionType.PRESS_KEY and self.key not in {
             "ENTER", "ESCAPE", "TAB", "SPACE", "BACKSPACE", "DELETE", "UP", "DOWN", "LEFT", "RIGHT",
         }:
