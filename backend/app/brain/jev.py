@@ -25,10 +25,16 @@ class JevDecisionEngine:
         apps = context.installed_apps or installed_applications()
         if not apps:
             apps = ["Google Chrome", "Safari", "Visual Studio Code", "Notes", "Finder", "System Settings"]
+        accessible_targets = context.accessible_targets
         candidates = self._candidates(transcript)
         payload = {
             "model": self.model,
-            "state": {"transcript": transcript, "frontmost_app": context.frontmost_app or "", "installed_apps": apps},
+            "state": {
+                "transcript": transcript,
+                "frontmost_app": context.frontmost_app or "",
+                "installed_apps": apps,
+                "accessible_targets": accessible_targets,
+            },
             "questions": {
                 "action": {
                     "type": "choice",
@@ -39,6 +45,11 @@ class JevDecisionEngine:
                     "type": "choice",
                     "instructions": "If the action is OPEN_APP or SWITCH_APP, choose the matching installed app. Otherwise choose none.",
                     "criteria": {**{app: app for app in apps}, "none": "No app target is needed"},
+                },
+                "accessibility_target": {
+                    "type": "choice",
+                    "instructions": "Choose the exact visible accessible UI element requested by the user.",
+                    "criteria": {**{target: target for target in accessible_targets}, "none": "No accessibility target is needed"},
                 },
                 "value": {"type": "choice", "instructions": "Choose the exact argument value from these code-owned candidates.", "criteria": candidates},
                 "engine": {"type": "choice", "criteria": {"google": "Google", "youtube": "YouTube"}},
@@ -58,7 +69,7 @@ class JevDecisionEngine:
         }
         response = self.client.post(config.TYPESAFE_URL, json=payload, headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
         response.raise_for_status()
-        return self._parse_response(response.json(), transcript, apps, candidates)
+        return self._parse_response(response.json(), transcript, apps, candidates, accessible_targets)
 
     @staticmethod
     def _candidates(transcript: str) -> dict[str, str]:
@@ -75,7 +86,13 @@ class JevDecisionEngine:
         return {f"value_{index}": value for index, value in enumerate(dict.fromkeys(v for v in values if v))}
 
     @staticmethod
-    def _parse_response(data: dict[str, Any], transcript: str, apps: list[str], candidates: dict[str, str] | None = None) -> Action:
+    def _parse_response(
+        data: dict[str, Any],
+        transcript: str,
+        apps: list[str],
+        candidates: dict[str, str] | None = None,
+        accessible_targets: list[str] | None = None,
+    ) -> Action:
         answers = data.get("answers", {})
         action = str(answers.get("action", {}).get("choice", "DONE"))
         if action not in {item.value for item in ActionType}:
@@ -85,6 +102,16 @@ class JevDecisionEngine:
             target = None
         if action in {ActionType.OPEN_APP.value, ActionType.SWITCH_APP.value} and target not in apps:
             raise ValueError("Jev selected an app that was not offered")
+        if action in {
+            ActionType.ACCESSIBILITY_CLICK.value,
+            ActionType.ACCESSIBILITY_SELECT.value,
+            ActionType.ACCESSIBILITY_FOCUS.value,
+        }:
+            target = answers.get("accessibility_target", answers.get("target", {})).get("choice")
+            if target == "none":
+                target = None
+            if accessible_targets and target not in accessible_targets:
+                raise ValueError("Jev selected an accessibility target that was not offered")
         candidates = candidates or JevDecisionEngine._candidates(transcript)
 
         def selected(name: str, default: str | None = None) -> str | None:
@@ -92,7 +119,13 @@ class JevDecisionEngine:
             return candidates.get(choice, choice)
 
         values: dict[str, Any] = {"action": action}
-        if action in {ActionType.OPEN_APP.value, ActionType.SWITCH_APP.value}:
+        if action in {
+            ActionType.OPEN_APP.value,
+            ActionType.SWITCH_APP.value,
+            ActionType.ACCESSIBILITY_CLICK.value,
+            ActionType.ACCESSIBILITY_SELECT.value,
+            ActionType.ACCESSIBILITY_FOCUS.value,
+        }:
             values["target"] = target
         elif action == ActionType.OPEN_URL.value:
             url = selected("url", selected("value", "")) or ""

@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import ClassVar, Protocol
 from urllib.parse import quote_plus
 
+from app.actions.accessibility import AccessibilityBackend, AccessibilityInspector
+
 
 class MacOSExecutor(Protocol):
     def execute(self, action_name: str, action: object) -> str:
@@ -26,6 +28,12 @@ class NativeMacOSExecutor:
         "ENTER": 36, "ESCAPE": 53, "TAB": 48, "SPACE": 49, "BACKSPACE": 51,
         "DELETE": 117, "UP": 126, "DOWN": 125, "LEFT": 123, "RIGHT": 124,
     }
+
+    def __init__(self, accessibility_backend: AccessibilityBackend | None = None) -> None:
+        self._accessibility_backend = accessibility_backend
+
+    def _accessibility(self) -> AccessibilityInspector:
+        return AccessibilityInspector(self._accessibility_backend)
 
     def execute(self, action_name: str, action: object) -> str:
         method = getattr(self, f"_{action_name.lower()}", None)
@@ -112,6 +120,21 @@ class NativeMacOSExecutor:
     def _wait(self, action: object) -> str:
         time.sleep(action.seconds)
         return "Done waiting."
+
+    def _accessibility_click(self, action: object) -> str:
+        return self._accessibility().click(action.target)
+
+    def _accessibility_select(self, action: object) -> str:
+        return self._accessibility().select(action.target)
+
+    def _accessibility_focus(self, action: object) -> str:
+        return self._accessibility().focus(action.target)
+
+    def _accessibility_read_focused(self, action: object) -> str:
+        return self._accessibility().read_focused()
+
+    def _accessibility_inspect(self, action: object) -> str:
+        return self._accessibility().render()
 
 
 @lru_cache(maxsize=1)

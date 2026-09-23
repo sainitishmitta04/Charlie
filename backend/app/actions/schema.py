@@ -22,6 +22,11 @@ class ActionType(StrEnum):
     DARK_MODE_OFF = "DARK_MODE_OFF"
     SYSTEM_SETTINGS = "SYSTEM_SETTINGS"
     SWITCH_APP = "SWITCH_APP"
+    ACCESSIBILITY_CLICK = "ACCESSIBILITY_CLICK"
+    ACCESSIBILITY_SELECT = "ACCESSIBILITY_SELECT"
+    ACCESSIBILITY_FOCUS = "ACCESSIBILITY_FOCUS"
+    ACCESSIBILITY_READ_FOCUSED = "ACCESSIBILITY_READ_FOCUSED"
+    ACCESSIBILITY_INSPECT = "ACCESSIBILITY_INSPECT"
     WAIT = "WAIT"
 
 
@@ -51,6 +56,9 @@ class Action(BaseModel):
             ActionType.SCROLL: ("direction",),
             ActionType.SWITCH_APP: ("target",),
             ActionType.SYSTEM_SETTINGS: ("setting",),
+            ActionType.ACCESSIBILITY_CLICK: ("target",),
+            ActionType.ACCESSIBILITY_SELECT: ("target",),
+            ActionType.ACCESSIBILITY_FOCUS: ("target",),
             ActionType.WAIT: ("seconds",),
         }
         missing = [name for name in required.get(self.action, ()) if getattr(self, name) is None]
@@ -75,6 +83,7 @@ class DecisionContext(BaseModel):
     transcript: str
     frontmost_app: str | None = None
     installed_apps: list[str] = Field(default_factory=list)
+    accessible_targets: list[str] = Field(default_factory=list)
 
 
 def action_from_dict(value: dict[str, Any]) -> Action:
