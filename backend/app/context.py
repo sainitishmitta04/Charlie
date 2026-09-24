@@ -91,7 +91,6 @@ class SessionContext:
             self.last_target = action.query
         elif action.action == ActionType.PRESS_KEY and action.key in {"ENTER", "RETURN"}:
             self.last_target = action.key
-            self.next_list_item()
         elif action.action == ActionType.TYPE_TEXT:
             self.last_text = action.text
             self.last_target = action.text

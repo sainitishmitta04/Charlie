@@ -6,7 +6,13 @@ from app.actions.macos import NativeMacOSExecutor
 from app.actions.schema import Action
 from app.brain.jev import JevDecisionEngine
 from app.context import SessionContext, TaskState
-from app.main import _context_action, run_text_sequence, run_wake_word
+from app.main import (
+    _context_action,
+    _conversation_transcript,
+    run_text,
+    run_text_sequence,
+    run_wake_word,
+)
 from app.voice_state import VoiceState, VoiceStateMachine
 
 
@@ -155,6 +161,103 @@ def test_enter_variants_are_press_key_actions(transcript, key):
     action, reason = _context_action(transcript, SessionContext())
     assert reason is None
     assert action == Action(action="PRESS_KEY", key=key)
+
+
+@pytest.mark.parametrize(
+    ("transcript", "key"),
+    [
+        ("Enter", "ENTER"),
+        ("Enter.", "ENTER"),
+        ("ENTER!", "ENTER"),
+        ("enter?", "ENTER"),
+        ("press enter", "ENTER"),
+        ("press Enter.", "ENTER"),
+        ("hit enter", "ENTER"),
+        ("return", "RETURN"),
+        ("press return", "RETURN"),
+        ("hit return", "RETURN"),
+        ("next line", "ENTER"),
+        ("next line.", "ENTER"),
+        ("new line", "ENTER"),
+        ("tab", "TAB"),
+        ("press tab", "TAB"),
+        ("hit tab", "TAB"),
+        ("backspace", "BACKSPACE"),
+        ("delete", "DELETE"),
+        ("escape", "ESCAPE"),
+        ("arrow up", "UP"),
+        ("press up arrow", "UP"),
+        ("press arrow down", "DOWN"),
+        ("arrow left", "LEFT"),
+        ("press right arrow", "RIGHT"),
+    ],
+)
+def test_exact_voice_key_commands_are_deterministic(transcript, key):
+    action, reason = _context_action(transcript, SessionContext())
+    assert reason is None
+    assert action == Action(action="PRESS_KEY", key=key)
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "enter the grocery list",
+        "right, grocery list",
+        "right arrow",
+        "delete the previous item",
+        "press enter command",
+    ],
+)
+def test_non_exact_key_phrases_are_not_deterministic_key_commands(transcript):
+    action, _ = _context_action(transcript, SessionContext())
+    assert action is None or action.action != "PRESS_KEY"
+
+
+def test_notes_text_preserves_original_punctuation_and_case(monkeypatch, capsys):
+    actions = []
+    monkeypatch.setattr("app.main.JevDecisionEngine", lambda: pytest.fail("Jev should not be initialized"))
+    monkeypatch.setattr("app.main.ActionExecutor", lambda macos: SimpleNamespace(execute=lambda action, dry_run=False: actions.append(action) or "ok"))
+    monkeypatch.setattr("app.main.AccessibilityInspector", lambda: SimpleNamespace(target_names=list))
+    monkeypatch.setattr("app.main.installed_applications", list)
+
+    assert run_text("Hello, world!", dry_run=True, session=SessionContext(current_app="Notes")) == 0
+    assert actions == [Action(action="TYPE_TEXT", text="Hello, world!")]
+    assert "Target:\nHello, world!" in capsys.readouterr().out
+
+
+def test_notes_conversation_list_uses_explicit_enter_without_skipping_numbers(monkeypatch):
+    actions = []
+    monkeypatch.setattr("app.main.JevDecisionEngine", lambda: pytest.fail("Jev should not be initialized"))
+    monkeypatch.setattr("app.main.ActionExecutor", lambda macos: SimpleNamespace(execute=lambda action, dry_run=False: actions.append(action) or "ok"))
+    monkeypatch.setattr("app.main.AccessibilityInspector", lambda: SimpleNamespace(target_names=list))
+    monkeypatch.setattr("app.main.installed_applications", list)
+    session = SessionContext(current_app="Notes")
+
+    for transcript in ("Grocery List", "Enter.", "make a numbered list", "Eggs", "Enter", "Milk"):
+        assert run_text(transcript, dry_run=True, session=session) == 0
+
+    assert actions == [
+        Action(action="TYPE_TEXT", text="Grocery List"),
+        Action(action="PRESS_KEY", key="ENTER"),
+        Action(action="TYPE_TEXT", text="1. Eggs"),
+        Action(action="PRESS_KEY", key="ENTER"),
+        Action(action="TYPE_TEXT", text="2. Milk"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("transcript", "expected"),
+    [
+        ("right, grocery list?", "grocery list?"),
+        ("okay, grocery list", "grocery list"),
+        ("ok, grocery list", "grocery list"),
+        ("alright, grocery list", "grocery list"),
+        ("right arrow", "right arrow"),
+        ("right click", "right click"),
+    ],
+)
+def test_conversation_filler_removal_is_conservative(transcript, expected):
+    assert _conversation_transcript(transcript) == expected
 
 
 def test_list_mode_numbers_items_and_resets():

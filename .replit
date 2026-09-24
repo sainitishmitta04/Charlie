@@ -5,3 +5,12 @@ channel = "stable-25_05"
 
 [agent]
 expertMode = true
+
+[userenv]
+
+[userenv.shared]
+CHARLIE_RECORD_SECONDS = "5"
+CHARLIE_SAMPLE_RATE = "16000"
+CHARLIE_WAKE_WORD = "Charlie"
+TYPESAFE_MODEL = "jev-latest"
+TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"

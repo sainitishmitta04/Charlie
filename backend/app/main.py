@@ -21,6 +21,11 @@ from app.audio.timing import TimingContext, VoiceTiming
 from app.audio.wake_word import WakeWordDetector, WhisperWakeWordDetector
 from app.brain.jev import JevDecisionEngine
 from app.commands.compound import split_compound
+from app.commands.normalize import (
+    deterministic_key_command,
+    normalize_stop_command,
+    normalize_voice_command,
+)
 from app.context import SessionContext, TaskState
 from app.voice_state import VoiceState, VoiceStateMachine
 
@@ -38,8 +43,7 @@ def _conversation_transcript(transcript: str) -> str:
 
 
 def _is_conversation_stop(transcript: str) -> bool:
-    normalized = re.sub(r"[^\w\s]", "", transcript.casefold())
-    return " ".join(normalized.split()) in _CONVERSATION_STOP_COMMANDS
+    return normalize_stop_command(transcript) in _CONVERSATION_STOP_COMMANDS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,16 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _context_action(transcript: str, session: SessionContext) -> tuple[object | None, str | None]:
-    normalized = " ".join(transcript.casefold().strip().split())
+    normalized = normalize_voice_command(transcript)
     if normalized in {"reset", "forget what we were doing", "forget what we are doing"}:
         session.clear()
         return None, "Context reset."
     if normalized in {"make a numbered list", "add a list", "new list", "start a new list"}:
         session.start_numbered_list()
         return None, "Numbered list mode enabled."
-    key_match = re.fullmatch(r"(?:press|hit)?\s*(enter|return|escape|esc|tab|space|backspace|delete)", normalized)
-    if key_match:
-        key = {"esc": "ESCAPE"}.get(key_match.group(1), key_match.group(1).upper())
+    key = deterministic_key_command(transcript)
+    if key is not None:
         return Action(action=ActionType.PRESS_KEY, key=key), None
     if normalized in {"switch back", "go back to the previous app"}:
         if not session.previous_app:
@@ -135,7 +138,7 @@ def run_text(
     if message and direct_action is None:
         print(f"Transcript:\n{transcript}\n\nContext:\n{context_before}\n\nDecision:\nWAIT\n\nReason:\n{message}")
         return 0 if message in {"Context reset.", "Numbered list mode enabled."} else 1
-    engine = JevDecisionEngine()
+    engine: JevDecisionEngine | None = None
     executor = ActionExecutor(NativeMacOSExecutor())
     steps = split_compound(transcript)
     if len(steps) > 1:
@@ -158,7 +161,11 @@ def run_text(
             step_action, step_message = _context_action(step, session)
             if step_message and step_action is None:
                 raise ValueError(step_message)
-            action = step_action or (direct_action if direct_action is not None and len(steps) == 1 else engine.decide(step, context))
+            action = step_action or (direct_action if direct_action is not None and len(steps) == 1 else None)
+            if action is None:
+                if engine is None:
+                    engine = JevDecisionEngine()
+                action = engine.decide(step, context)
             if timing:
                 timing.mark("decision_end")
                 timing.mark("executor_start")
