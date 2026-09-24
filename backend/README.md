@@ -1,6 +1,6 @@
 # Charlie backend
 
-Phase 5 keeps text input as the source of truth and adds a local audio boundary:
+Phase 6 keeps text input as the source of truth and adds responsive local voice interaction:
 
 - `brain/`: decision engines. Jev is active; Laya has a reserved adapter.
 - `actions/schema.py`: validated actions from an untrusted model response.
@@ -8,6 +8,9 @@ Phase 5 keeps text input as the source of truth and adds a local audio boundary:
 - `actions/accessibility.py`: native AX-tree inspection and safe element actions.
 - `audio/microphone.py`: one fixed-length local WAV recording.
 - `audio/stt.py`: local whisper.cpp execution and transcript parsing.
+- `audio/timing.py`: reusable voice pipeline timing measurements.
+- `audio/wake_word.py`: local Whisper transcript wake-word matching.
+- `voice_state.py`: explicit wake-word interaction states.
 
 Installed applications are discovered from `/Applications`, `/System/Applications`,
 and `~/Applications`. Switching uses the same validated app target as opening an app.
@@ -25,6 +28,7 @@ PYTHONPATH=backend python -m app.main --text "open Notes and type buy milk" --dr
 PYTHONPATH=backend python -m app.main --text "open System Settings" --dry-run
 PYTHONPATH=backend python -m app.main --inspect-ui
 PYTHONPATH=backend python -m app.main --voice --dry-run
+PYTHONPATH=backend python -m app.main --wake-word --dry-run
 ```
 
 Remove `--dry-run` only when you want Charlie to control macOS. The current commands
@@ -65,6 +69,13 @@ Add the resulting paths to the repository root `.env`:
 CHARLIE_WHISPER_BIN=/absolute/path/to/whisper.cpp/build/bin/whisper-cli
 CHARLIE_WHISPER_MODEL=/absolute/path/to/whisper.cpp/models/ggml-base.en.bin
 CHARLIE_RECORD_SECONDS=5
+CHARLIE_MAX_RECORD_SECONDS=5
+CHARLIE_MIN_RECORD_SECONDS=0.5
+CHARLIE_SILENCE_SECONDS=0.7
+CHARLIE_SPEECH_THRESHOLD=0.015
+CHARLIE_PREROLL_SECONDS=0.2
+CHARLIE_SILENCE_DETECTION=1
+CHARLIE_WAKE_CHUNK_SECONDS=2
 CHARLIE_SAMPLE_RATE=16000
 ```
 
@@ -90,11 +101,30 @@ Run one command and exit:
 ```bash
 PYTHONPATH=backend python -m app.main --voice
 PYTHONPATH=backend python -m app.main --voice --dry-run
+PYTHONPATH=backend python -m app.main --wake-word
+PYTHONPATH=backend python -m app.main --wake-word --dry-run
 ```
 
-Voice mode records one fixed-length clip, runs whisper.cpp locally, and sends only
-the resulting text transcript to Jev. It does not implement wake words, continuous
-listening, voice activity detection, or cloud speech APIs.
+Voice mode records one command using local speech/silence detection, runs whisper.cpp
+locally, and sends only the resulting text transcript to Jev. It prints recording,
+Whisper, decision, execution, and total timing. Set `CHARLIE_SILENCE_DETECTION=0`
+to use the fixed maximum duration fallback.
+
+Wake-word mode starts in `WAITING_FOR_WAKE_WORD`, listens in short local chunks for
+`CHARLIE_WAKE_WORD` (default `Charlie`), then records and processes one command before
+returning to the waiting state. `Charlie, open Chrome` is also accepted; only `open
+Chrome` is sent to Jev.
+
+Example timing output:
+
+```text
+Voice timing:
+	Recording:     1.20s
+	Whisper:       0.72s
+	Decision:      0.65s
+	Execution:     0.08s
+	Total:         2.65s
+```
 
 Troubleshooting:
 
