@@ -16,6 +16,9 @@ class MacOSExecutor(Protocol):
 
 
 class NativeMacOSExecutor:
+    _SEARCHABLE_SITES: ClassVar[dict[str, str]] = {
+        "youtube.com": "https://www.youtube.com/results?search_query={query}",
+    }
     _SYSTEM_SETTINGS: ClassVar[dict[str, str]] = {
         "ACCESSIBILITY": "com.apple.preference.universalaccess",
         "DISPLAY": "com.apple.Displays-Settings.extension",
@@ -120,6 +123,17 @@ class NativeMacOSExecutor:
         self._run(["open", f"{base}{quote_plus(action.query)}"])
         return f"Searching {engine} for {action.query}."
 
+    def _search_current_site(self, action: object) -> str:
+        from urllib.parse import urlparse
+
+        host = (urlparse(action.url).hostname or "").casefold().removeprefix("www.") if action.url else ""
+        template = self._SEARCHABLE_SITES.get(host)
+        if template is None:
+            raise ValueError(f"Current site is not supported for search: {host or 'unknown'}")
+        url = template.format(query=quote_plus(action.query))
+        self._run(["open", url])
+        return f"Searching {host.replace('youtube', 'YouTube')} for {action.query}."
+
     def _type_text(self, action: object) -> str:
         text = action.text.replace("\\", "\\\\").replace('"', '\\"')
         self._osascript(f'tell application "System Events" to keystroke "{text}"')
@@ -196,13 +210,7 @@ class NativeMacOSExecutor:
 
     @classmethod
     def _resolve_app(cls, target: str) -> str:
-        requested = " ".join(target.strip().split())
-        canonical = cls._APP_ALIASES.get(requested.casefold(), requested)
-        installed = installed_applications()
-        match = next((name for name in installed if name.casefold() == canonical.casefold()), None)
-        if match is None:
-            raise ValueError(f"{canonical} is not installed.")
-        return match
+        return resolve_application(target, cls._APP_ALIASES)
 
     @staticmethod
     def _escape_applescript(value: str) -> str:
@@ -219,3 +227,13 @@ def installed_applications() -> list[str]:
             names.update(path.stem for path in root.glob("*.app"))
     names.update({"Finder", "System Settings"})
     return sorted(names, key=str.casefold)
+
+
+def resolve_application(target: str, aliases: dict[str, str] | None = None) -> str:
+    requested = " ".join(target.strip().split())
+    canonical = (aliases or NativeMacOSExecutor._APP_ALIASES).get(requested.casefold(), requested)
+    installed = installed_applications()
+    match = next((name for name in installed if name.casefold() == canonical.casefold()), None)
+    if match is None:
+        raise ValueError(f"{canonical} is not installed.")
+    return match

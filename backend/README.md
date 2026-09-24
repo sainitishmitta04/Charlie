@@ -76,6 +76,7 @@ CHARLIE_SPEECH_THRESHOLD=0.015
 CHARLIE_PREROLL_SECONDS=0.2
 CHARLIE_SILENCE_DETECTION=1
 CHARLIE_WAKE_CHUNK_SECONDS=2
+CHARLIE_CONVERSATION_TIMEOUT_SECONDS=8
 CHARLIE_SAMPLE_RATE=16000
 ```
 
@@ -115,6 +116,25 @@ Wake-word mode starts in `WAITING_FOR_WAKE_WORD`, listens in short local chunks 
 returning to the waiting state. `Charlie, open Chrome` is also accepted; only `open
 Chrome` is sent to Jev.
 
+After a successful wake-word command, Charlie enters a short conversational window.
+Follow-ups reuse the normal VAD recording and STT pipeline without requiring `Charlie`
+again:
+
+```text
+Charlie, open Notes
+Grocery List
+Enter
+make a numbered list
+Eggs
+Milk
+```
+
+The window ends after `CHARLIE_CONVERSATION_TIMEOUT_SECONDS` of inactivity or when the
+user says `stop`, `stop listening`, `that's all`, or `done`. A wake word spoken inside
+the window is still stripped safely. Conversation state controls whether a wake word
+is required; SessionContext separately tracks the current app, URL, document/list mode,
+and other successful structured actions.
+
 Example timing output:
 
 ```text
@@ -139,6 +159,39 @@ Troubleshooting:
 Phase 7 extends the same transcript -> Jev -> validated action -> deterministic
 executor pipeline. Jev still selects structured actions only; it never generates
 shell commands, AppleScript, coordinates, or vision instructions.
+
+## Phase 8 session context
+
+Charlie keeps a small in-memory session context while the process is running. It stores
+the current and previous app, current URL, last structured action/target/text, and the
+progress of the current compound task. It does not store conversation history, secrets,
+files, or persistent memory. Context expires after `CHARLIE_CONTEXT_TIMEOUT_SECONDS`
+(default 300 seconds) and can be cleared with `reset` or `forget what we were doing`.
+
+Use a text sequence to exercise follow-ups in one process:
+
+```bash
+PYTHONPATH=backend python -m app.main --text-sequence \
+	"open Chrome" "go to YouTube" "search for Python tutorials" --dry-run
+PYTHONPATH=backend python -m app.main --text-sequence \
+	"open Notes" "add milk" "add eggs" --dry-run
+```
+
+Safe references such as `go there` use the one known current URL, and `switch back`
+uses the previous app. Missing or ambiguous references produce a clarification and do
+not execute. Successful actions update context; failed actions do not. Compound tasks
+stop at the first failed step.
+
+When the current URL is a supported searchable site, an unqualified follow-up search
+uses `SEARCH_CURRENT_SITE`. For example, after `go to YouTube`, `search for Python
+tutorials` opens the deterministic YouTube results URL. Explicit `search the web` or
+`search Google` remains `SEARCH_WEB`; unsupported `search here` requests are rejected
+instead of guessing a site.
+
+In Notes, plain text is entered as `TYPE_TEXT`, while `Enter`, `press Enter`, and
+`hit return` are validated `PRESS_KEY` actions. `make a numbered list` enables a small
+in-memory list mode, producing `1. Eggs`, `2. Milk`, and so on. Normal text entry does
+not automatically add newlines.
 
 System commands:
 

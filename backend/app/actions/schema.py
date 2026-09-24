@@ -11,6 +11,7 @@ class ActionType(StrEnum):
     OPEN_APP = "OPEN_APP"
     OPEN_URL = "OPEN_URL"
     SEARCH_WEB = "SEARCH_WEB"
+    SEARCH_CURRENT_SITE = "SEARCH_CURRENT_SITE"
     TYPE_TEXT = "TYPE_TEXT"
     PRESS_KEY = "PRESS_KEY"
     SCROLL = "SCROLL"
@@ -66,6 +67,7 @@ class Action(BaseModel):
             ActionType.QUIT_APP: ("target",),
             ActionType.OPEN_URL: ("url",),
             ActionType.SEARCH_WEB: ("query",),
+            ActionType.SEARCH_CURRENT_SITE: ("query", "url"),
             ActionType.TYPE_TEXT: ("text",),
             ActionType.PRESS_KEY: ("key",),
             ActionType.SCROLL: ("direction",),
@@ -113,6 +115,7 @@ class DecisionContext(BaseModel):
     frontmost_app: str | None = None
     installed_apps: list[str] = Field(default_factory=list)
     accessible_targets: list[str] = Field(default_factory=list)
+    session_context: dict[str, Any] = Field(default_factory=dict)
 
 
 def action_from_dict(value: dict[str, Any]) -> Action:

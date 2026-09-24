@@ -34,11 +34,12 @@ class JevDecisionEngine:
                 "frontmost_app": context.frontmost_app or "",
                 "installed_apps": apps,
                 "accessible_targets": accessible_targets,
+                "session_context": context.session_context,
             },
             "questions": {
                 "action": {
                     "type": "choice",
-                    "instructions": "Choose the single computer action requested by the transcript.",
+                    "instructions": "Choose one registered structured computer action. Use session_context only to resolve safe follow-up references; never invent a command.",
                     "criteria": {item.value: item.value.replace("_", " ").lower() for item in ActionType},
                 },
                 "target": {
@@ -70,7 +71,10 @@ class JevDecisionEngine:
         }
         response = self.client.post(config.TYPESAFE_URL, json=payload, headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
         response.raise_for_status()
-        return self._parse_response(response.json(), transcript, apps, candidates, accessible_targets)
+        return self._parse_response(
+            response.json(), transcript, apps, candidates, accessible_targets,
+            context.session_context.get("current_url"),
+        )
 
     @staticmethod
     def _candidates(transcript: str) -> dict[str, str]:
@@ -93,6 +97,7 @@ class JevDecisionEngine:
         apps: list[str],
         candidates: dict[str, str] | None = None,
         accessible_targets: list[str] | None = None,
+        current_url: str | None = None,
     ) -> Action:
         answers = data.get("answers", {})
         action = str(answers.get("action", {}).get("choice", "DONE"))
@@ -157,8 +162,14 @@ class JevDecisionEngine:
             known_sites = {"youtube": "https://www.youtube.com", "leetcode": "https://leetcode.com", "google": "https://www.google.com"}
             values["url"] = known_sites.get(url.lower(), url if url.startswith(("http://", "https://")) else f"https://{url}")
         elif action == ActionType.SEARCH_WEB.value:
-            values["query"] = selected("query", selected("value", transcript))
+            query_answer = answers.get("query")
+            values["query"] = selected("query", JevDecisionEngine._query_candidate(transcript)) if query_answer else JevDecisionEngine._query_candidate(transcript)
             values["engine"] = selected("engine", "google")
+        elif action == ActionType.SEARCH_CURRENT_SITE.value:
+            values["query"] = JevDecisionEngine._query_candidate(transcript)
+            values["url"] = current_url
+            if not current_url:
+                raise ValueError("SEARCH_CURRENT_SITE requires a validated current URL")
         elif action == ActionType.TYPE_TEXT.value:
             values["text"] = selected("text", selected("value", transcript))
         elif action == ActionType.PRESS_KEY.value:
@@ -173,3 +184,15 @@ class JevDecisionEngine:
         elif action == ActionType.SYSTEM_SETTINGS.value:
             values["setting"] = str(selected("setting", "DISPLAY")).upper()
         return action_from_dict(values)
+
+    @staticmethod
+    def _query_candidate(transcript: str) -> str:
+        patterns = (
+            r"^(?:search|look\s+up|find)\s+(?:on\s+)?(?:google|youtube|github|amazon)?\s*(?:for\s+)?(.+)$",
+            r"^google\s+(.+)$",
+        )
+        for pattern in patterns:
+            match = re.match(pattern, transcript.strip(), re.IGNORECASE)
+            if match:
+                return match.group(1).strip().rstrip(".")
+        return transcript.strip()

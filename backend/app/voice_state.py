@@ -9,6 +9,7 @@ class VoiceState(StrEnum):
     LISTENING_FOR_COMMAND = "LISTENING_FOR_COMMAND"
     PROCESSING = "PROCESSING"
     EXECUTING = "EXECUTING"
+    CONVERSATION_ACTIVE = "CONVERSATION_ACTIVE"
 
 
 class VoiceStateMachine:
@@ -27,6 +28,18 @@ class VoiceStateMachine:
     def execution_started(self) -> None:
         self._transition(VoiceState.EXECUTING)
 
+    def conversation_started(self) -> None:
+        self._transition(VoiceState.CONVERSATION_ACTIVE)
+
+    def follow_up_started(self) -> None:
+        self._transition(VoiceState.LISTENING_FOR_COMMAND)
+
+    def follow_up_failed(self) -> None:
+        self._transition(VoiceState.CONVERSATION_ACTIVE)
+
+    def conversation_ended(self) -> None:
+        self._transition(VoiceState.WAITING_FOR_WAKE_WORD)
+
     def reset(self) -> None:
         self._transition(VoiceState.WAITING_FOR_WAKE_WORD)
 
@@ -34,9 +47,10 @@ class VoiceStateMachine:
         allowed = {
             VoiceState.IDLE: {VoiceState.WAITING_FOR_WAKE_WORD},
             VoiceState.WAITING_FOR_WAKE_WORD: {VoiceState.LISTENING_FOR_COMMAND},
-            VoiceState.LISTENING_FOR_COMMAND: {VoiceState.PROCESSING, VoiceState.WAITING_FOR_WAKE_WORD},
+            VoiceState.LISTENING_FOR_COMMAND: {VoiceState.PROCESSING, VoiceState.WAITING_FOR_WAKE_WORD, VoiceState.CONVERSATION_ACTIVE},
             VoiceState.PROCESSING: {VoiceState.EXECUTING, VoiceState.WAITING_FOR_WAKE_WORD},
-            VoiceState.EXECUTING: {VoiceState.WAITING_FOR_WAKE_WORD},
+            VoiceState.EXECUTING: {VoiceState.WAITING_FOR_WAKE_WORD, VoiceState.CONVERSATION_ACTIVE},
+            VoiceState.CONVERSATION_ACTIVE: {VoiceState.LISTENING_FOR_COMMAND, VoiceState.WAITING_FOR_WAKE_WORD},
         }
         if next_state not in allowed[self.state]:
             raise RuntimeError(f"Invalid voice state transition: {self.state} -> {next_state}")
