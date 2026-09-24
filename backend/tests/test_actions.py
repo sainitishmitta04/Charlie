@@ -79,7 +79,7 @@ def test_jev_parses_scroll_arguments():
     }
     assert JevDecisionEngine._parse_response(response, "scroll down", []).model_dump() == {
         "action": "SCROLL", "target": None, "url": None, "query": None, "text": None,
-        "key": None, "direction": "DOWN", "amount": 5, "engine": None, "setting": None, "seconds": None,
+        "key": None, "direction": "DOWN", "amount": 5, "engine": None, "setting": None, "modifiers": [], "role": None, "seconds": None,
     }
 
 

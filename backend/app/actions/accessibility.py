@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -54,15 +55,18 @@ class AccessibilityInspector:
             names.extend(label for label in node.labels if len(label) <= max_label_length)
         return list(dict.fromkeys(name for name in names if name))[:limit]
 
-    def find(self, target: str) -> AccessibilityNode:
-        wanted = target.casefold().strip()
+    def find(self, target: str, role: str | None = None) -> AccessibilityNode:
+        wanted, inferred_role = self._query(target)
+        role = role or inferred_role
         nodes = list(self._walk(self.tree()))
-        exact = [node for node in nodes if any(label.casefold() == wanted for label in node.labels)]
-        if len(exact) == 1:
-            return exact[0]
-        if len(exact) > 1:
-            raise AccessibilityError(f"Accessibility target is ambiguous: {target}")
-        partial = [node for node in nodes if any(wanted in label.casefold() for label in node.labels)]
+        candidates = [node for node in nodes if not role or self._role_matches(node.role, role)]
+        for attribute in ("title", "identifier", "description"):
+            exact = [node for node in candidates if self._normalize(getattr(node, attribute)) == wanted]
+            if len(exact) == 1:
+                return exact[0]
+            if len(exact) > 1:
+                raise AccessibilityError(f"Accessibility target is ambiguous: {target}")
+        partial = [node for node in candidates if any(wanted in self._normalize(label) for label in node.labels)]
         if len(partial) == 1:
             return partial[0]
         if not partial:
@@ -70,15 +74,15 @@ class AccessibilityInspector:
         raise AccessibilityError(f"Accessibility target is ambiguous: {target}")
 
     def click(self, target: str) -> str:
-        self.backend.perform(self.find(target), "AXPress")
+        self.backend.perform(self.find(target, "button"), "AXPress")
         return f"Pressed {target}."
 
     def select(self, target: str) -> str:
-        self.backend.perform(self.find(target), "AXSelect")
+        self.backend.perform(self.find(target, "selectable"), "AXSelect")
         return f"Selected {target}."
 
     def focus(self, target: str) -> str:
-        self.backend.perform(self.find(target), "AXFocus")
+        self.backend.perform(self.find(target, "textfield"), "AXFocus")
         return f"Focused {target}."
 
     def read_focused(self) -> str:
@@ -98,6 +102,38 @@ class AccessibilityInspector:
         yield node
         for child in node.children:
             yield from cls._walk(child)
+
+    @staticmethod
+    def _normalize(value: str) -> str:
+        return " ".join(re.sub(r"[^\w\s]", " ", value.casefold()).split())
+
+    @classmethod
+    def _query(cls, target: str) -> tuple[str, str | None]:
+        query = cls._normalize(target)
+        role = None
+        suffixes = {
+            "button": "button", "field": "textfield", "text field": "textfield", "search box": "textfield",
+            "checkbox": "checkbox", "check box": "checkbox", "radio button": "radio", "menu item": "menuitem",
+            "link": "link", "slider": "slider", "popup button": "popupbutton", "pop up button": "popupbutton",
+        }
+        for suffix, role_name in sorted(suffixes.items(), key=lambda pair: -len(pair[0])):
+            if query.endswith(" " + suffix):
+                query = query[: -(len(suffix) + 1)].strip()
+                role = role_name
+                break
+        query = re.sub(r"^(?:the|a|an)\s+", "", query)
+        return query, role
+
+    @staticmethod
+    def _role_matches(actual: str, expected: str) -> bool:
+        role = actual.casefold().replace("ax", "")
+        aliases = {
+            "button": {"button", "pushbutton"}, "textfield": {"textfield", "searchfield", "combobox"},
+            "selectable": {"menuitem", "radio", "radiobutton", "checkbox", "popupbutton", "listitem"},
+            "checkbox": {"checkbox"}, "radio": {"radio", "radiobutton"}, "menuitem": {"menuitem"},
+            "link": {"link"}, "slider": {"slider"}, "popupbutton": {"popupbutton"},
+        }
+        return role in aliases.get(expected, {expected})
 
     @staticmethod
     def _describe(node: AccessibilityNode) -> str:

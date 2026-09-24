@@ -49,11 +49,17 @@ def run_text(transcript: str, dry_run: bool = False, timing: VoiceTiming | None 
         )
         if timing:
             timing.mark("decision_start")
-        action = engine.decide(step, context)
-        if timing:
-            timing.mark("decision_end")
-            timing.mark("executor_start")
-        result = executor.execute(action, dry_run=dry_run)
+        try:
+            action = engine.decide(step, context)
+            if timing:
+                timing.mark("decision_end")
+                timing.mark("executor_start")
+            result = executor.execute(action, dry_run=dry_run)
+        except Exception as error:  # noqa: BLE001
+            print(f"Step {index} failed: {error}")
+            if len(steps) > 1:
+                print("Compound command aborted.")
+            return 1
         if timing:
             timing.mark("executor_end")
         prefix = f"Step {index}:\n" if len(steps) > 1 else ""

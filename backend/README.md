@@ -134,6 +134,82 @@ Troubleshooting:
 - `Microphone permission denied`: grant the launching application Microphone access.
 - `No speech detected`: increase `CHARLIE_RECORD_SECONDS` or speak closer to the microphone.
 
+## Phase 7 controls
+
+Phase 7 extends the same transcript -> Jev -> validated action -> deterministic
+executor pipeline. Jev still selects structured actions only; it never generates
+shell commands, AppleScript, coordinates, or vision instructions.
+
+System commands:
+
+```text
+increase volume
+decrease volume
+mute / unmute
+take a screenshot
+lock my Mac
+turn on dark mode / turn off dark mode
+open System Settings
+open Accessibility settings
+open Display settings
+open Sound settings
+open Bluetooth settings
+open Wi-Fi settings
+open Privacy and Security settings
+```
+
+Application commands use installed-app discovery and deterministic aliases:
+
+```text
+open Chrome / launch Google Chrome
+open VS Code / open vscode
+open Notes / open Calculator / open Finder
+switch to Chrome
+close Chrome
+quit VS Code
+```
+
+Keyboard, scrolling, URL, and search examples:
+
+```text
+press Enter
+press Command C
+press Command V
+scroll down / scroll up / scroll to the top
+open YouTube
+go to GitHub
+search Google for Python decorators
+```
+
+Accessibility commands use the current AX tree and fail closed for missing or
+ambiguous targets:
+
+```text
+click the Register button
+click Submit
+focus the search field
+select the Python option
+read the focused element
+inspect this window
+```
+
+Compound commands are split at recognized command boundaries and execute in order:
+
+```bash
+PYTHONPATH=backend python -m app.main --text "open Chrome and go to YouTube" --dry-run
+PYTHONPATH=backend python -m app.main --text "open Chrome, go to LeetCode, and search for Two Sum" --dry-run
+PYTHONPATH=backend python -m app.main --text "open Notes and write buy milk" --dry-run
+```
+
+If a compound step fails, later steps are not executed and Charlie reports that the
+compound command was aborted. Every Phase 7 command supports dry-run validation:
+
+```bash
+PYTHONPATH=backend python -m app.main --text "increase volume" --dry-run
+PYTHONPATH=backend python -m app.main --text "click the Register button" --dry-run
+PYTHONPATH=backend python -m app.main --wake-word --dry-run
+```
+
 Run tests and lint:
 
 ```bash

@@ -53,7 +53,8 @@ class JevDecisionEngine:
                 },
                 "value": {"type": "choice", "instructions": "Choose the exact argument value from these code-owned candidates.", "criteria": candidates},
                 "engine": {"type": "choice", "criteria": {"google": "Google", "youtube": "YouTube"}},
-                "key": {"type": "choice", "criteria": {key: key for key in ("ENTER", "ESCAPE", "TAB", "SPACE", "BACKSPACE", "DELETE", "UP", "DOWN", "LEFT", "RIGHT")}},
+                "key": {"type": "choice", "criteria": {key: key for key in ("ENTER", "RETURN", "ESCAPE", "TAB", "SPACE", "BACKSPACE", "DELETE", "UP", "DOWN", "LEFT", "RIGHT", "A", "C", "Q", "S", "V", "W")}},
+                "modifier": {"type": "choice", "criteria": {modifier: modifier for modifier in ("COMMAND", "CONTROL", "OPTION", "SHIFT", "NONE")}},
                 "direction": {"type": "choice", "criteria": {direction: direction for direction in ("UP", "DOWN", "TOP", "BOTTOM")}},
                 "amount": {"type": "choice", "criteria": {str(amount): str(amount) for amount in range(1, 21)}},
                 "seconds": {"type": "choice", "criteria": {str(seconds): str(seconds) for seconds in (1, 2, 5, 10)}},
@@ -97,6 +98,8 @@ class JevDecisionEngine:
         action = str(answers.get("action", {}).get("choice", "DONE"))
         if action not in {item.value for item in ActionType}:
             raise ValueError(f"Jev returned unsupported action: {action}")
+        if action == ActionType.WAIT.value and not re.search(r"\bwait\b", transcript, re.IGNORECASE):
+            raise ValueError("WAIT requires an explicit wait command")
         target = answers.get("target", {}).get("choice")
         if target == "none":
             target = None
@@ -121,12 +124,34 @@ class JevDecisionEngine:
         values: dict[str, Any] = {"action": action}
         if action in {
             ActionType.OPEN_APP.value,
+            ActionType.CLOSE_APP.value,
+            ActionType.QUIT_APP.value,
             ActionType.SWITCH_APP.value,
             ActionType.ACCESSIBILITY_CLICK.value,
             ActionType.ACCESSIBILITY_SELECT.value,
             ActionType.ACCESSIBILITY_FOCUS.value,
         }:
             values["target"] = target
+        elif action in {
+            ActionType.OPEN_SYSTEM_SETTINGS.value,
+            ActionType.OPEN_ACCESSIBILITY_SETTINGS.value,
+            ActionType.OPEN_DISPLAY_SETTINGS.value,
+            ActionType.OPEN_SOUND_SETTINGS.value,
+            ActionType.OPEN_BLUETOOTH_SETTINGS.value,
+            ActionType.OPEN_WIFI_SETTINGS.value,
+            ActionType.OPEN_PRIVACY_SETTINGS.value,
+            ActionType.VOLUME_UP.value,
+            ActionType.VOLUME_DOWN.value,
+            ActionType.MUTE.value,
+            ActionType.UNMUTE.value,
+            ActionType.SCREENSHOT.value,
+            ActionType.LOCK_SCREEN.value,
+            ActionType.DARK_MODE_ON.value,
+            ActionType.DARK_MODE_OFF.value,
+            ActionType.ACCESSIBILITY_READ_FOCUSED.value,
+            ActionType.ACCESSIBILITY_INSPECT.value,
+        }:
+            pass
         elif action == ActionType.OPEN_URL.value:
             url = selected("url", selected("value", "")) or ""
             known_sites = {"youtube": "https://www.youtube.com", "leetcode": "https://leetcode.com", "google": "https://www.google.com"}
@@ -138,6 +163,8 @@ class JevDecisionEngine:
             values["text"] = selected("text", selected("value", transcript))
         elif action == ActionType.PRESS_KEY.value:
             values["key"] = str(selected("key", "ENTER")).upper()
+            modifier = str(selected("modifier", "NONE")).upper()
+            values["modifiers"] = [] if modifier == "NONE" else [modifier]
         elif action == ActionType.SCROLL.value:
             values["direction"] = str(selected("direction", "DOWN")).upper()
             values["amount"] = int(selected("amount", "5") or 5)

@@ -25,8 +25,15 @@ class NativeMacOSExecutor:
         "PRIVACY_SECURITY": "com.apple.settings.PrivacySecurity.extension",
     }
     _KEY_CODES: ClassVar[dict[str, int]] = {
-        "ENTER": 36, "ESCAPE": 53, "TAB": 48, "SPACE": 49, "BACKSPACE": 51,
+        "ENTER": 36, "RETURN": 36, "ESCAPE": 53, "TAB": 48, "SPACE": 49, "BACKSPACE": 51,
         "DELETE": 117, "UP": 126, "DOWN": 125, "LEFT": 123, "RIGHT": 124,
+    }
+    _APP_ALIASES: ClassVar[dict[str, str]] = {
+        "chrome": "Google Chrome", "google chrome": "Google Chrome",
+        "vscode": "Visual Studio Code", "vs code": "Visual Studio Code",
+        "visual studio code": "Visual Studio Code", "code": "Visual Studio Code",
+        "notes": "Notes", "apple notes": "Notes", "calculator": "Calculator", "calc": "Calculator",
+        "finder": "Finder",
     }
 
     def __init__(self, accessibility_backend: AccessibilityBackend | None = None) -> None:
@@ -50,16 +57,57 @@ class NativeMacOSExecutor:
         NativeMacOSExecutor._run(["osascript", "-e", script])
 
     def _open_app(self, action: object) -> str:
-        self._run(["open", "-a", action.target])
-        return f"Opening {action.target}."
+        app = self._resolve_app(action.target)
+        self._run(["open", "-a", app])
+        return f"Opening {app}."
 
     def _switch_app(self, action: object) -> str:
-        return self._open_app(action)
+        app = self._resolve_app(action.target)
+        self._run(["open", "-a", app])
+        return f"Switching to {app}."
+
+    def _close_app(self, action: object) -> str:
+        app = self._resolve_app(action.target)
+        self._osascript(f'tell application "{self._escape_applescript(app)}" to close every window')
+        return f"Closed {app}."
+
+    def _quit_app(self, action: object) -> str:
+        app = self._resolve_app(action.target)
+        self._osascript(f'tell application "{self._escape_applescript(app)}" to quit')
+        return f"Quit {app}."
 
     def _system_settings(self, action: object) -> str:
         pane = self._SYSTEM_SETTINGS[action.setting]
         self._run(["open", f"x-apple.systempreferences:{pane}"])
         return f"Opening {action.setting.replace('_', ' ').title()} settings."
+
+    def _open_system_settings(self, action: object) -> str:
+        return self._open_settings("SYSTEM")
+
+    def _open_accessibility_settings(self, action: object) -> str:
+        return self._open_settings("ACCESSIBILITY")
+
+    def _open_display_settings(self, action: object) -> str:
+        return self._open_settings("DISPLAY")
+
+    def _open_sound_settings(self, action: object) -> str:
+        return self._open_settings("SOUND")
+
+    def _open_bluetooth_settings(self, action: object) -> str:
+        return self._open_settings("BLUETOOTH")
+
+    def _open_wifi_settings(self, action: object) -> str:
+        return self._open_settings("WI_FI")
+
+    def _open_privacy_settings(self, action: object) -> str:
+        return self._open_settings("PRIVACY_SECURITY")
+
+    def _open_settings(self, setting: str) -> str:
+        if setting == "SYSTEM":
+            self._run(["open", "x-apple.systempreferences:"])
+            return "Opening System Settings."
+        self._run(["open", f"x-apple.systempreferences:{self._SYSTEM_SETTINGS[setting]}"])
+        return f"Opening {setting.replace('_', ' ').title()} settings."
 
     def _open_url(self, action: object) -> str:
         url = action.url if action.url.startswith(("http://", "https://")) else f"https://{action.url}"
@@ -78,7 +126,13 @@ class NativeMacOSExecutor:
         return "Done."
 
     def _press_key(self, action: object) -> str:
-        self._osascript(f'tell application "System Events" to key code {self._KEY_CODES[action.key]}')
+        using = ""
+        if action.modifiers:
+            names = {"COMMAND": "command", "CONTROL": "control", "OPTION": "option", "SHIFT": "shift"}
+            using = " using {" + ", ".join(f"{names[item]} down" for item in action.modifiers) + "}"
+        key = action.key.upper()
+        command = f"keystroke \"{key.lower()}\"" if len(key) == 1 else f"key code {self._KEY_CODES[key]}"
+        self._osascript(f'tell application "System Events" to {command}{using}')
         return f"Pressed {action.key.lower()}."
 
     def _scroll(self, action: object) -> str:
@@ -99,6 +153,10 @@ class NativeMacOSExecutor:
     def _mute(self, action: object) -> str:
         self._osascript("set volume output muted not (output muted of (get volume settings))")
         return "Mute toggled."
+
+    def _unmute(self, action: object) -> str:
+        self._osascript("set volume output muted false")
+        return "Volume unmuted."
 
     def _screenshot(self, action: object) -> str:
         path = f"{__import__('pathlib').Path.home()}/Desktop/Charlie-{int(time.time())}.png"
@@ -135,6 +193,20 @@ class NativeMacOSExecutor:
 
     def _accessibility_inspect(self, action: object) -> str:
         return self._accessibility().render()
+
+    @classmethod
+    def _resolve_app(cls, target: str) -> str:
+        requested = " ".join(target.strip().split())
+        canonical = cls._APP_ALIASES.get(requested.casefold(), requested)
+        installed = installed_applications()
+        match = next((name for name in installed if name.casefold() == canonical.casefold()), None)
+        if match is None:
+            raise ValueError(f"{canonical} is not installed.")
+        return match
+
+    @staticmethod
+    def _escape_applescript(value: str) -> str:
+        return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 @lru_cache(maxsize=1)
